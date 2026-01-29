@@ -1,0 +1,144 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Region {
+  UA
+  BR
+  OTHER
+}
+
+enum BillingPeriod {
+  MONTHLY
+  ANNUAL
+}
+
+enum DiscountType {
+  FIXED
+  PERCENT
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  EXPIRED
+}
+
+enum PaymentProvider {
+  MONOBANK
+  PIX
+  STRIPE
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  passwordHash String
+  region       Region
+  role         UserRole       @default(USER)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  subscriptions Subscription[]
+}
+
+model Plan {
+  id               String   @id @default(uuid())
+  code             String   @unique
+  name             String
+  basePriceMicros  Int
+  pricePerSeatMicros Int?
+  includedApiCalls Int
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  subscriptions Subscription[]
+}
+
+model PromoCode {
+  id            String       @id @default(uuid())
+  code          String       @unique
+  discountType  DiscountType
+  amountMicros  Int?         // for FIXED
+  percent       Int?         // for PERCENT, 0..100
+  isActive      Boolean      @default(true)
+  expiresAt     DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id            String             @id @default(uuid())
+  userId        String
+  planId        String
+  promoCodeId   String?
+  billingPeriod BillingPeriod
+  seats         Int                @default(1)
+  status        SubscriptionStatus @default(ACTIVE)
+
+  // pricing snapshot
+  currency      String             @default("USD")
+  subtotalMicros Int
+  discountMicros Int               @default(0)
+  totalMicros    Int
+
+  provider      PaymentProvider
+  providerRef   String?
+
+  startedAt     DateTime           @default(now())
+  currentPeriodStart DateTime      @default(now())
+  currentPeriodEnd   DateTime
+  canceledAt    DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  user          User               @relation(fields: [userId], references: [id])
+  plan          Plan               @relation(fields: [planId], references: [id])
+  promoCode     PromoCode?         @relation(fields: [promoCodeId], references: [id])
+  payments      Payment[]
+
+  @@index([userId])
+  @@index([planId])
+}
+
+model Payment {
+  id            String         @id @default(uuid())
+  subscriptionId String
+  provider      PaymentProvider
+  status        PaymentStatus  @default(PENDING)
+  amountMicros  Int
+  currency      String         @default("USD")
+  providerRef   String?
+  raw           Json?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  subscription  Subscription   @relation(fields: [subscriptionId], references: [id])
+
+  @@index([subscriptionId])
+}
